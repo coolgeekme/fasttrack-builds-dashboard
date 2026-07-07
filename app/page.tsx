@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Search, Rocket, Send, Globe, Phone, Star, MapPin, Loader2, CheckCircle, ExternalLink, RefreshCw, GitBranch, ArrowRight, AlertTriangle, X, Info } from 'lucide-react'
+import { Search, Rocket, Send, Globe, Phone, Star, MapPin, Loader2, CheckCircle, ExternalLink, RefreshCw, GitBranch, ArrowRight, AlertTriangle, X, Info, Palette } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api'
 
@@ -26,6 +26,9 @@ interface PipelineLead {
   repo_url: string | null
   preview_url: string | null
   created_at: string
+  palette: string | null
+  layout: string | null
+  variation_id: string | null
 }
 
 interface GenerateResult {
@@ -164,6 +167,7 @@ export default function Dashboard() {
   // Pipeline state
   const [pipelineLeads, setPipelineLeads] = useState<PipelineLead[]>([])
   const [pipelineLoading, setPipelineLoading] = useState(false)
+  const [pitchingLead, setPitchingLead] = useState<string | null>(null)
 
   // Auto-scroll ref
   const resultsRef = useRef<HTMLDivElement>(null)
@@ -214,7 +218,6 @@ export default function Dashboard() {
     setNoLeadsError(null)
     setLeads([])
 
-    // Simulate progress steps with timing
     const stepTimers: NodeJS.Timeout[] = []
     stepTimers.push(setTimeout(() => setSearchStep(1), 800))
     stepTimers.push(setTimeout(() => setSearchStep(2), 2000))
@@ -233,7 +236,6 @@ export default function Dashboard() {
         body: JSON.stringify(body),
       })
 
-      // Clear timers
       stepTimers.forEach(t => clearTimeout(t))
 
       if (!resp.ok) {
@@ -256,12 +258,10 @@ export default function Dashboard() {
       const data = await resp.json()
       setSearchStep(5)
 
-      // Small delay to show final step completion
       await new Promise(r => setTimeout(r, 500))
       setShowProgress(false)
       setLeads(data)
 
-      // Add to pipeline state immediately so they appear in Pipeline tab
       const newPipelineLeads: PipelineLead[] = data.map((biz: Business, idx: number) => ({
         id: Date.now() + idx,
         name: biz.name,
@@ -273,6 +273,9 @@ export default function Dashboard() {
         repo_url: null,
         preview_url: null,
         created_at: new Date().toISOString(),
+        palette: null,
+        layout: null,
+        variation_id: null,
       }))
       
       setPipelineLeads(prev => {
@@ -281,10 +284,8 @@ export default function Dashboard() {
         return [...uniqueNew, ...prev]
       })
 
-      // Toast
       addToast('success', `Found ${data.length} leads without websites!`)
 
-      // Auto-scroll to results
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 200)
@@ -357,11 +358,15 @@ export default function Dashboard() {
       // Update pipeline leads state
       setPipelineLeads(prev => prev.map(l => 
         l.name === biz.name 
-          ? { ...l, status: 'deployed', repo_url: genData.repo_url, preview_url: deployUrl }
+          ? { ...l, status: 'deployed', repo_url: genData.repo_url, preview_url: deployUrl, palette: genData.palette || null, layout: genData.layout_type || null, variation_id: genData.variation_id || null }
           : l
       ))
 
       addToast('success', `${biz.name} is LIVE at ${deployUrl}`)
+
+      // Auto-sync: refresh pipeline in background so Pipeline tab is fresh
+      fetchPipeline()
+
     } catch (err) {
       console.error('Generate failed:', err)
       addToast('error', `Failed to generate site for ${biz.name}`)
@@ -393,6 +398,44 @@ export default function Dashboard() {
     }
   }
 
+  // Send Pitch from Pipeline tab (calls /outreach with lead data)
+  const sendPitchFromPipeline = async (lead: PipelineLead) => {
+    if (!lead.preview_url) {
+      addToast('error', `Cannot pitch ${lead.name}: no preview URL yet. Deploy first.`)
+      return
+    }
+    setPitchingLead(lead.name)
+    try {
+      const resp = await fetch(`${API_URL}/outreach`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_name: lead.name,
+          phone: lead.phone || '',
+          preview_url: lead.preview_url,
+          city: '',
+        }),
+      })
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        addToast('error', `Pitch failed: ${err.detail || 'Unknown error'}`)
+        setPitchingLead(null)
+        return
+      }
+
+      addToast('success', `Pitch Sent! Outreach prepared for ${lead.name}`)
+      // Refresh the lead's status in UI
+      setPipelineLeads(prev => prev.map(l => 
+        l.name === lead.name ? { ...l, status: 'pitched' } : l
+      ))
+    } catch (err) {
+      console.error('Pitch failed:', err)
+      addToast('error', `Pitch failed for ${lead.name}`)
+    }
+    setPitchingLead(null)
+  }
+
   const updateLeadStatus = async (leadId: number, newStatus: string) => {
     try {
       await fetch(`${API_URL}/leads/update-status`, {
@@ -418,15 +461,6 @@ export default function Dashboard() {
     }
   }
 
-  const getNextStatus = (status: string): string | null => {
-    switch (status) {
-      case 'research': return 'generated'
-      case 'generated': return 'deployed'
-      case 'deployed': return 'pitched'
-      default: return null
-    }
-  }
-
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
       {/* Toast Notifications */}
@@ -437,7 +471,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 sm:gap-3">
             <Rocket className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500" />
             <h1 className="text-lg sm:text-xl font-bold text-white truncate">FastTrack Builds</h1>
-            <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30 hidden sm:inline">v3.1</span>
+            <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30 hidden sm:inline">v3.2</span>
           </div>
           <div className="flex gap-1 bg-gray-800/50 rounded-lg p-1">
             {(['research', 'generate', 'pipeline'] as const).map((tab) => (
@@ -573,7 +607,7 @@ export default function Dashboard() {
               <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Manual Generate</h2>
               <p className="text-sm sm:text-base text-gray-400">Generate a unique site for a specific business. Each site gets a random palette, layout, and imagery.</p>
             </div>
-            <ManualGenerateForm apiUrl={API_URL} addToast={addToast} />
+            <ManualGenerateForm apiUrl={API_URL} addToast={addToast} fetchPipeline={fetchPipeline} />
           </div>
         )}
 
@@ -582,7 +616,7 @@ export default function Dashboard() {
             <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2">Pipeline</h2>
-                <p className="text-sm sm:text-base text-gray-400">Track all generated sites and their deployment status.</p>
+                <p className="text-sm sm:text-base text-gray-400">Track all leads and send pitches directly from here.</p>
               </div>
               <button
                 onClick={fetchPipeline}
@@ -645,6 +679,15 @@ export default function Dashboard() {
                             {lead.address && <span className="flex items-center gap-1 truncate max-w-[200px] sm:max-w-none"><MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" /> {lead.address}</span>}
                             {lead.created_at && <span className="text-gray-500 text-xs">{new Date(lead.created_at).toLocaleDateString()}</span>}
                           </div>
+                          {/* Design variety info */}
+                          {(lead.palette || lead.layout) && (
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <Palette className="w-3 h-3 text-gray-500" />
+                              {lead.palette && <span className="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded">{lead.palette}</span>}
+                              {lead.layout && <span className="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded">{lead.layout}</span>}
+                              {lead.variation_id && <span className="text-xs text-gray-500 font-mono">#{lead.variation_id}</span>}
+                            </div>
+                          )}
                           <div className="flex flex-wrap items-center gap-3 mt-2 sm:mt-3">
                             {lead.repo_url && (
                               <a href={lead.repo_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-400 text-xs sm:text-sm hover:underline">
@@ -659,14 +702,44 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          {getNextStatus(lead.status) && (
+                          {/* Show "Send Pitch" button for deployed leads instead of "Mark Pitched" */}
+                          {lead.status === 'deployed' && lead.preview_url && (
                             <button
-                              onClick={() => updateLeadStatus(lead.id, getNextStatus(lead.status)!)}
+                              onClick={() => sendPitchFromPipeline(lead)}
+                              disabled={pitchingLead === lead.name}
+                              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs sm:text-sm px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              {pitchingLead === lead.name ? (
+                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...</>
+                              ) : (
+                                <><Send className="w-3.5 h-3.5" /> Send Pitch</>
+                              )}
+                            </button>
+                          )}
+                          {/* For non-deployed statuses, show the advance button (but not "Mark Pitched") */}
+                          {lead.status === 'research' && (
+                            <button
+                              onClick={() => updateLeadStatus(lead.id, 'generated')}
                               className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-lg transition-colors"
                             >
                               <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                              {getNextStatus(lead.status) === 'generated' ? 'Mark Generated' : getNextStatus(lead.status) === 'deployed' ? 'Mark Deployed' : 'Mark Pitched'}
+                              Mark Generated
                             </button>
+                          )}
+                          {lead.status === 'generated' && (
+                            <button
+                              onClick={() => updateLeadStatus(lead.id, 'deployed')}
+                              className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                              Mark Deployed
+                            </button>
+                          )}
+                          {/* Pitched leads show a checkmark */}
+                          {lead.status === 'pitched' && (
+                            <span className="flex items-center gap-1 text-purple-400 text-xs sm:text-sm px-3 py-1.5">
+                              <CheckCircle className="w-3.5 h-3.5" /> Pitched
+                            </span>
                           )}
                         </div>
                       </div>
@@ -693,7 +766,7 @@ export default function Dashboard() {
   )
 }
 
-function ManualGenerateForm({ apiUrl, addToast }: { apiUrl: string; addToast: (type: Toast['type'], message: string) => void }) {
+function ManualGenerateForm({ apiUrl, addToast, fetchPipeline }: { apiUrl: string; addToast: (type: Toast['type'], message: string) => void; fetchPipeline: () => Promise<void> }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [services, setServices] = useState('')
@@ -749,6 +822,10 @@ function ManualGenerateForm({ apiUrl, addToast }: { apiUrl: string; addToast: (t
         variation: genData.variation_id,
       })
       addToast('success', `${name} is LIVE at ${deployUrl}`)
+
+      // Auto-sync: refresh pipeline in background
+      fetchPipeline()
+
     } catch (err) {
       console.error(err)
       addToast('error', 'Network error during generation')
