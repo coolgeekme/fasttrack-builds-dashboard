@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, Rocket, Send, Globe, Phone, Star, MapPin, Loader2, CheckCircle, ExternalLink, RefreshCw, GitBranch, ArrowRight } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://76.13.107.20:8100'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api'
 
 interface Business {
   name: string
@@ -33,6 +33,9 @@ interface GenerateResult {
   repo: string
   repo_url: string
   message: string
+  palette?: string
+  layout_type?: string
+  variation_id?: string
 }
 
 interface DeployResult {
@@ -51,7 +54,7 @@ export default function Dashboard() {
   const [leads, setLeads] = useState<Business[]>([])
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState<string | null>(null)
-  const [results, setResults] = useState<Record<string, { repo?: string; url?: string }>>({})
+  const [results, setResults] = useState<Record<string, { repo?: string; url?: string; palette?: string; layout?: string; variation?: string }>>({})
 
   // Pipeline state
   const [pipelineLeads, setPipelineLeads] = useState<PipelineLead[]>([])
@@ -76,12 +79,18 @@ export default function Dashboard() {
   }, [activeTab, fetchPipeline])
 
   const researchLeads = async () => {
+    // No validation required - backend defaults to Phoenix, AZ if no location provided
     setLoading(true)
     try {
+      const body: Record<string, string> = { category }
+      if (zipCode) body.zip_code = zipCode
+      if (city) body.city = city
+      if (state) body.state = state
+
       const resp = await fetch(`${API_URL}/research`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zip_code: zipCode, city, state, category }),
+        body: JSON.stringify(body),
       })
       const data = await resp.json()
       setLeads(data)
@@ -101,8 +110,8 @@ export default function Dashboard() {
           business_name: biz.name,
           phone: biz.phone || '(555) 000-0000',
           services: biz.services.length > 0 ? biz.services : [category],
-          city,
-          state,
+          city: city || undefined,
+          state: state || undefined,
         }),
       })
       const genData: GenerateResult = await genResp.json()
@@ -115,12 +124,17 @@ export default function Dashboard() {
       })
       const deployData: DeployResult = await deployResp.json()
 
-      // deploy endpoint now returns full URL with https://
       const deployUrl = deployData.url.startsWith('http') ? deployData.url : `https://${deployData.url}`
 
       setResults(prev => ({
         ...prev,
-        [biz.name]: { repo: genData.repo_url, url: deployUrl }
+        [biz.name]: {
+          repo: genData.repo_url,
+          url: deployUrl,
+          palette: genData.palette,
+          layout: genData.layout_type,
+          variation: genData.variation_id,
+        }
       }))
     } catch (err) {
       console.error('Generate failed:', err)
@@ -163,6 +177,7 @@ export default function Dashboard() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'research': return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
       case 'generated': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
       case 'deployed': return 'bg-green-500/20 text-green-400 border-green-500/30'
       case 'pitched': return 'bg-purple-500/20 text-purple-400 border-purple-500/30'
@@ -172,6 +187,7 @@ export default function Dashboard() {
 
   const getNextStatus = (status: string): string | null => {
     switch (status) {
+      case 'research': return 'generated'
       case 'generated': return 'deployed'
       case 'deployed': return 'pitched'
       default: return null
@@ -185,6 +201,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <Rocket className="w-7 h-7 text-blue-500" />
             <h1 className="text-xl font-bold text-white">FastTrack Builds</h1>
+            <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v3.0</span>
           </div>
           <div className="flex gap-1 bg-gray-800/50 rounded-lg p-1">
             {(['research', 'generate', 'pipeline'] as const).map((tab) => (
@@ -205,20 +222,20 @@ export default function Dashboard() {
           <div>
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-white mb-2">Lead Research</h2>
-              <p className="text-gray-400">Find home service businesses with great reviews but no website.</p>
+              <p className="text-gray-400">Find home service businesses with great reviews but no website. Location is optional (defaults to Phoenix, AZ).</p>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
               <div className="grid sm:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">ZIP Code</label>
+                  <label className="block text-sm text-gray-400 mb-1">ZIP Code <span className="text-gray-600">(optional)</span></label>
                   <input type="text" value={zipCode} onChange={(e) => setZipCode(e.target.value)} placeholder="85001" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">City</label>
+                  <label className="block text-sm text-gray-400 mb-1">City <span className="text-gray-600">(optional)</span></label>
                   <input type="text" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Phoenix" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">State</label>
+                  <label className="block text-sm text-gray-400 mb-1">State <span className="text-gray-600">(optional)</span></label>
                   <input type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder="AZ" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
@@ -262,9 +279,14 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2">
                         {results[biz.name] ? (
                           <>
-                            <a href={results[biz.name].url} target="_blank" className="flex items-center gap-1 text-green-400 text-sm hover:underline">
-                              <CheckCircle className="w-4 h-4" /> Live<ExternalLink className="w-3 h-3" />
-                            </a>
+                            <div className="flex flex-col items-end gap-1 mr-3">
+                              <a href={results[biz.name].url} target="_blank" className="flex items-center gap-1 text-green-400 text-sm hover:underline">
+                                <CheckCircle className="w-4 h-4" /> Live<ExternalLink className="w-3 h-3" />
+                              </a>
+                              {results[biz.name].variation && (
+                                <span className="text-xs text-gray-500">Var: {results[biz.name].variation} | {results[biz.name].layout}</span>
+                              )}
+                            </div>
                             <button onClick={() => sendOutreach(biz)} className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white text-sm px-3 py-1.5 rounded-lg">
                               <Send className="w-3.5 h-3.5" /> Outreach
                             </button>
@@ -291,7 +313,7 @@ export default function Dashboard() {
           <div>
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-white mb-2">Manual Generate</h2>
-              <p className="text-gray-400">Generate a site for a specific business manually.</p>
+              <p className="text-gray-400">Generate a unique site for a specific business. Each site gets a random palette, layout, and imagery.</p>
             </div>
             <ManualGenerateForm apiUrl={API_URL} />
           </div>
@@ -329,6 +351,9 @@ export default function Dashboard() {
                 <div className="flex items-center gap-4 mb-4">
                   <span className="text-sm text-gray-400">{pipelineLeads.length} leads in pipeline</span>
                   <div className="flex gap-2">
+                    <span className="text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-400">
+                      {pipelineLeads.filter(l => l.status === 'research').length} Research
+                    </span>
                     <span className="text-xs px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400">
                       {pipelineLeads.filter(l => l.status === 'generated').length} Generated
                     </span>
@@ -382,7 +407,7 @@ export default function Dashboard() {
                               className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
                             >
                               <ArrowRight className="w-3.5 h-3.5" />
-                              {getNextStatus(lead.status) === 'deployed' ? 'Mark Deployed' : 'Mark Pitched'}
+                              {getNextStatus(lead.status) === 'generated' ? 'Mark Generated' : getNextStatus(lead.status) === 'deployed' ? 'Mark Deployed' : 'Mark Pitched'}
                             </button>
                           )}
                         </div>
@@ -406,7 +431,7 @@ function ManualGenerateForm({ apiUrl }: { apiUrl: string }) {
   const [city, setCity] = useState('')
   const [state, setState] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ repo_url?: string; deploy_url?: string } | null>(null)
+  const [result, setResult] = useState<{ repo_url?: string; deploy_url?: string; palette?: string; layout?: string; variation?: string } | null>(null)
 
   const handleGenerate = async () => {
     if (!name || !phone) return
@@ -419,8 +444,8 @@ function ManualGenerateForm({ apiUrl }: { apiUrl: string }) {
           business_name: name,
           phone,
           services: services.split(',').map(s => s.trim()).filter(Boolean),
-          city,
-          state,
+          city: city || undefined,
+          state: state || undefined,
         }),
       })
       const genData = await genResp.json()
@@ -431,9 +456,14 @@ function ManualGenerateForm({ apiUrl }: { apiUrl: string }) {
         body: JSON.stringify({ repo_name: repoName }),
       })
       const deployData = await deployResp.json()
-      // Backend now returns full URL with https://
       const deployUrl = deployData.url.startsWith('http') ? deployData.url : `https://${deployData.url}`
-      setResult({ repo_url: genData.repo_url, deploy_url: deployUrl })
+      setResult({
+        repo_url: genData.repo_url,
+        deploy_url: deployUrl,
+        palette: genData.palette,
+        layout: genData.layout_type,
+        variation: genData.variation_id,
+      })
     } catch (err) {
       console.error(err)
     }
@@ -457,8 +487,8 @@ function ManualGenerateForm({ apiUrl }: { apiUrl: string }) {
         </div>
         <div className="flex gap-2">
           <div className="flex-1">
-            <label className="block text-sm text-gray-400 mb-1">City</label>
-            <input type="text" value={city} onChange={e => setCity(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" placeholder="Phoenix" />
+            <label className="block text-sm text-gray-400 mb-1">City <span className="text-gray-600">(optional)</span></label>
+            <input type="text" value={city} onChange={e => setCity(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" placeholder="Peoria" />
           </div>
           <div className="w-20">
             <label className="block text-sm text-gray-400 mb-1">State</label>
@@ -476,6 +506,7 @@ function ManualGenerateForm({ apiUrl }: { apiUrl: string }) {
           <div className="mt-2 space-y-1 text-sm">
             {result.repo_url && <a href={result.repo_url} target="_blank" rel="noopener noreferrer" className="block text-blue-400 hover:underline">GitHub: {result.repo_url}</a>}
             {result.deploy_url && <a href={result.deploy_url} target="_blank" rel="noopener noreferrer" className="block text-blue-400 hover:underline">Live: {result.deploy_url}</a>}
+            {result.palette && <p className="text-gray-400">Palette: {result.palette} | Layout: {result.layout} | Variation: {result.variation}</p>}
           </div>
         </div>
       )}
