@@ -260,6 +260,15 @@ export default function Dashboard() {
 
       await new Promise(r => setTimeout(r, 500))
       setShowProgress(false)
+
+      // Handle 200 OK with empty list as "no leads found"
+      if (Array.isArray(data) && data.length === 0) {
+        setNoLeadsError('No businesses matching criteria found. Try a broader category or different location.')
+        addToast('info', 'No leads found. Try adjusting your search criteria.')
+        setLoading(false)
+        return
+      }
+
       setLeads(data)
 
       const newPipelineLeads: PipelineLead[] = data.map((biz: Business, idx: number) => ({
@@ -367,6 +376,12 @@ export default function Dashboard() {
       // Auto-sync: refresh pipeline in background so Pipeline tab is fresh
       fetchPipeline()
 
+      // Auto-switch to Pipeline tab after a brief delay so user sees source of truth
+      setTimeout(() => {
+        setActiveTab('pipeline')
+        addToast('info', 'Switched to Pipeline — your deployed lead is ready to pitch!')
+      }, 1500)
+
     } catch (err) {
       console.error('Generate failed:', err)
       addToast('error', `Failed to generate site for ${biz.name}`)
@@ -375,23 +390,35 @@ export default function Dashboard() {
   }
 
   const sendOutreach = async (biz: Business) => {
+    // Check results from current session, or fall back to pipeline lead's preview_url
     const result = results[biz.name]
-    if (!result?.url) return
+    const previewUrl = result?.url || pipelineLeads.find(l => l.name === biz.name)?.preview_url
+    if (!previewUrl) {
+      addToast('error', `Cannot pitch ${biz.name}: no preview URL available. Deploy first.`)
+      return
+    }
     try {
-      await fetch(`${API_URL}/outreach`, {
+      const resp = await fetch(`${API_URL}/outreach`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           business_name: biz.name,
           phone: biz.phone || '',
-          preview_url: result.url,
+          preview_url: previewUrl,
           city,
         }),
       })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        addToast('error', `Pitch failed: ${err.detail || 'Unknown error'}`)
+        return
+      }
       addToast('success', `Outreach sent for ${biz.name}!`)
       setPipelineLeads(prev => prev.map(l => 
         l.name === biz.name ? { ...l, status: 'pitched' } : l
       ))
+      // Refresh pipeline to stay in sync
+      fetchPipeline()
     } catch (err) {
       console.error('Outreach failed:', err)
       addToast('error', `Outreach failed for ${biz.name}`)
@@ -578,6 +605,15 @@ export default function Dashboard() {
                                   <span className="text-xs text-gray-500">{results[biz.name].palette}</span>
                                 )}
                               </div>
+                              <button onClick={() => sendOutreach(biz)} className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-lg">
+                                <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Pitch
+                              </button>
+                            </>
+                          ) : pipelineLeads.find(l => l.name === biz.name)?.preview_url ? (
+                            <>
+                              <a href={pipelineLeads.find(l => l.name === biz.name)?.preview_url || ''} target="_blank" className="flex items-center gap-1 text-green-400 text-xs sm:text-sm hover:underline mr-2">
+                                <CheckCircle className="w-4 h-4" /> Live<ExternalLink className="w-3 h-3" />
+                              </a>
                               <button onClick={() => sendOutreach(biz)} className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-lg">
                                 <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Pitch
                               </button>
@@ -876,3 +912,4 @@ function ManualGenerateForm({ apiUrl, addToast, fetchPipeline }: { apiUrl: strin
     </div>
   )
 }
+
