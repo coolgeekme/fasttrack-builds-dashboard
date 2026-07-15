@@ -628,9 +628,16 @@ export default function Dashboard() {
                             {biz.rating && <span className="flex items-center gap-1 text-yellow-500 text-xs sm:text-sm"><Star className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-current" />{biz.rating}</span>}
                             {biz.reviews && <span className="text-xs text-gray-500">({biz.reviews} reviews)</span>}
                             {biz.website_status === 'outdated' ? (
-                              <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
-                                Outdated Website{biz.website_age_years ? ` (${Math.round(biz.website_age_years)}y)` : ''}
-                              </span>
+                              <>
+                                <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
+                                  Outdated Website{biz.website_age_years ? ` (${Math.round(biz.website_age_years)}y)` : ''}
+                                </span>
+                                {biz.website_domain && (
+                                  <a href={ensureHttps(biz.website_domain)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-300 hover:underline">
+                                    {biz.website_domain} <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </>
                             ) : (
                               <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">No Website</span>
                             )}
@@ -762,9 +769,16 @@ export default function Dashboard() {
                               </span>
                             )}
                             {lead.website_status === 'outdated' && (
-                              <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
-                                Outdated Website{lead.website_age_years ? ` (${Math.round(lead.website_age_years)}y)` : ''}
-                              </span>
+                              <>
+                                <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
+                                  Outdated Website{lead.website_age_years ? ` (${Math.round(lead.website_age_years)}y)` : ''}
+                                </span>
+                                {lead.website_domain && (
+                                  <a href={ensureHttps(lead.website_domain)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-300 hover:underline">
+                                    {lead.website_domain} <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </>
                             )}
                           </div>
                           <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-400">
