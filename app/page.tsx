@@ -14,6 +14,9 @@ interface Business {
   services: string[]
   has_website: boolean
   place_id?: string | null
+  website_status?: 'none' | 'outdated'
+  website_domain?: string | null
+  website_age_years?: number | null
 }
 
 interface PipelineLead {
@@ -30,6 +33,9 @@ interface PipelineLead {
   palette: string | null
   layout: string | null
   variation_id: string | null
+  website_status?: 'none' | 'outdated'
+  website_domain?: string | null
+  website_age_years?: number | null
 }
 
 interface GenerateResult {
@@ -335,6 +341,9 @@ export default function Dashboard() {
           city: city || undefined,
           state: state || undefined,
           place_id: biz.place_id || undefined,
+          website_status: biz.website_status || undefined,
+          website_domain: biz.website_domain || undefined,
+          website_age_years: biz.website_age_years || undefined,
         }),
       })
 
@@ -618,7 +627,13 @@ export default function Dashboard() {
                             <h4 className="text-white font-semibold text-sm sm:text-base truncate">{biz.name}</h4>
                             {biz.rating && <span className="flex items-center gap-1 text-yellow-500 text-xs sm:text-sm"><Star className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-current" />{biz.rating}</span>}
                             {biz.reviews && <span className="text-xs text-gray-500">({biz.reviews} reviews)</span>}
-                            <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">No Website</span>
+                            {biz.website_status === 'outdated' ? (
+                              <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
+                                Outdated Website{biz.website_age_years ? ` (${Math.round(biz.website_age_years)}y)` : ''}
+                              </span>
+                            ) : (
+                              <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">No Website</span>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-400">
                             {biz.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {biz.phone}</span>}
@@ -744,6 +759,11 @@ export default function Dashboard() {
                             {lead.rating && (
                               <span className="flex items-center gap-1 text-yellow-500 text-xs sm:text-sm">
                                 <Star className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-current" />{lead.rating}
+                              </span>
+                            )}
+                            {lead.website_status === 'outdated' && (
+                              <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
+                                Outdated Website{lead.website_age_years ? ` (${Math.round(lead.website_age_years)}y)` : ''}
                               </span>
                             )}
                           </div>
