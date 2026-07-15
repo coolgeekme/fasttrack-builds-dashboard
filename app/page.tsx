@@ -54,6 +54,14 @@ interface Toast {
   message: string
 }
 
+// Strips any (possibly repeated) leading http(s):// before re-adding exactly one,
+// so a backend value that's already prefixed never turns into "https://https://..."
+function ensureHttps(url: string | null | undefined): string {
+  if (!url) return ''
+  const stripped = url.trim().replace(/^(?:https?:\/\/)+/i, '')
+  return stripped ? `https://${stripped}` : ''
+}
+
 // ─── Toast System ────────────────────────────────────────────────────────────
 
 function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast: (id: number) => void }) {
@@ -198,7 +206,11 @@ export default function Dashboard() {
     try {
       const resp = await fetch(`${API_URL}/pipeline`)
       const data = await resp.json()
-      setPipelineLeads(data.leads || [])
+      const normalized: PipelineLead[] = (data.leads || []).map((l: PipelineLead) => ({
+        ...l,
+        preview_url: l.preview_url ? ensureHttps(l.preview_url) : null,
+      }))
+      setPipelineLeads(normalized)
     } catch (err) {
       console.error('Pipeline fetch failed:', err)
     }
@@ -351,7 +363,7 @@ export default function Dashboard() {
 
       const deployData: DeployResult = await deployResp.json()
 
-      const deployUrl = deployData.url.startsWith('http') ? deployData.url : `https://${deployData.url}`
+      const deployUrl = ensureHttps(deployData.url)
 
       setResults(prev => ({
         ...prev,
@@ -488,6 +500,16 @@ export default function Dashboard() {
     }
   }
 
+  const getNextStep = (status: string) => {
+    switch (status) {
+      case 'research': return 'Next: Generate & deploy a site for this lead.'
+      case 'generated': return 'Next: Deploy the generated site so it goes live.'
+      case 'deployed': return 'Next: Send the pitch so the business sees their new site.'
+      case 'pitched': return "Next: Follow up in 2-3 days if you don't hear back."
+      default: return ''
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
       {/* Toast Notifications */}
@@ -580,7 +602,14 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="grid gap-3 sm:gap-4">
-                    {leads.map((biz, i) => (
+                    {leads.map((biz, i) => {
+                      const pipelineMatch = pipelineLeads.find(l => l.name === biz.name)
+                      const nextStep = results[biz.name]
+                        ? getNextStep('deployed')
+                        : pipelineMatch
+                        ? getNextStep(pipelineMatch.status)
+                        : ''
+                      return (
                       <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -593,6 +622,11 @@ export default function Dashboard() {
                             {biz.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {biz.phone}</span>}
                             {biz.address && <span className="flex items-center gap-1 truncate max-w-[250px]"><MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" /> {biz.address}</span>}
                           </div>
+                          {nextStep && (
+                            <p className="flex items-center gap-1 text-xs text-blue-400/80 mt-1.5">
+                              <ArrowRight className="w-3 h-3 flex-shrink-0" /> {nextStep}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {results[biz.name] ? (
@@ -609,9 +643,9 @@ export default function Dashboard() {
                                 <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Pitch
                               </button>
                             </>
-                          ) : pipelineLeads.find(l => l.name === biz.name)?.preview_url ? (
+                          ) : pipelineMatch?.preview_url ? (
                             <>
-                              <a href={pipelineLeads.find(l => l.name === biz.name)?.preview_url || ''} target="_blank" className="flex items-center gap-1 text-green-400 text-xs sm:text-sm hover:underline mr-2">
+                              <a href={pipelineMatch.preview_url} target="_blank" className="flex items-center gap-1 text-green-400 text-xs sm:text-sm hover:underline mr-2">
                                 <CheckCircle className="w-4 h-4" /> Live<ExternalLink className="w-3 h-3" />
                               </a>
                               <button onClick={() => sendOutreach(biz)} className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-lg">
@@ -629,7 +663,8 @@ export default function Dashboard() {
                           )}
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -643,7 +678,7 @@ export default function Dashboard() {
               <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Manual Generate</h2>
               <p className="text-sm sm:text-base text-gray-400">Generate a unique site for a specific business. Each site gets a random palette, layout, and imagery.</p>
             </div>
-            <ManualGenerateForm apiUrl={API_URL} addToast={addToast} fetchPipeline={fetchPipeline} />
+            <ManualGenerateForm apiUrl={API_URL} addToast={addToast} fetchPipeline={fetchPipeline} goToPipeline={() => setActiveTab('pipeline')} />
           </div>
         )}
 
@@ -736,6 +771,11 @@ export default function Dashboard() {
                               </a>
                             )}
                           </div>
+                          {getNextStep(lead.status) && (
+                            <p className="flex items-center gap-1 text-xs text-blue-400/80 mt-2">
+                              <ArrowRight className="w-3 h-3 flex-shrink-0" /> {getNextStep(lead.status)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {/* Show "Send Pitch" button for deployed leads instead of "Mark Pitched" */}
@@ -802,7 +842,7 @@ export default function Dashboard() {
   )
 }
 
-function ManualGenerateForm({ apiUrl, addToast, fetchPipeline }: { apiUrl: string; addToast: (type: Toast['type'], message: string) => void; fetchPipeline: () => Promise<void> }) {
+function ManualGenerateForm({ apiUrl, addToast, fetchPipeline, goToPipeline }: { apiUrl: string; addToast: (type: Toast['type'], message: string) => void; fetchPipeline: () => Promise<void>; goToPipeline: () => void }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [services, setServices] = useState('')
@@ -849,7 +889,7 @@ function ManualGenerateForm({ apiUrl, addToast, fetchPipeline }: { apiUrl: strin
         return
       }
       const deployData = await deployResp.json()
-      const deployUrl = deployData.url.startsWith('http') ? deployData.url : `https://${deployData.url}`
+      const deployUrl = ensureHttps(deployData.url)
       setResult({
         repo_url: genData.repo_url,
         deploy_url: deployUrl,
@@ -906,6 +946,14 @@ function ManualGenerateForm({ apiUrl, addToast, fetchPipeline }: { apiUrl: strin
             {result.repo_url && <a href={result.repo_url} target="_blank" rel="noopener noreferrer" className="block text-blue-400 hover:underline truncate">GitHub: {result.repo_url}</a>}
             {result.deploy_url && <a href={result.deploy_url} target="_blank" rel="noopener noreferrer" className="block text-blue-400 hover:underline truncate">Live: {result.deploy_url}</a>}
             {result.palette && <p className="text-gray-400 text-xs sm:text-sm">Palette: {result.palette} | Layout: {result.layout} | Variation: {result.variation}</p>}
+          </div>
+          <div className="mt-3 pt-3 border-t border-green-800/50 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+            <p className="flex items-center gap-1 text-xs text-blue-300">
+              <ArrowRight className="w-3 h-3 flex-shrink-0" /> Next: Head to Pipeline to track status and send the pitch.
+            </p>
+            <button onClick={goToPipeline} className="flex items-center justify-center gap-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+              <GitBranch className="w-3 h-3" /> Go to Pipeline
+            </button>
           </div>
         </div>
       )}
