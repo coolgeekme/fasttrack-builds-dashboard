@@ -13,6 +13,7 @@ interface Business {
   reviews: number | null
   services: string[]
   has_website: boolean
+  place_id?: string | null
 }
 
 interface PipelineLead {
@@ -333,6 +334,7 @@ export default function Dashboard() {
           services: biz.services.length > 0 ? biz.services : [category],
           city: city || undefined,
           state: state || undefined,
+          place_id: biz.place_id || undefined,
         }),
       })
 
